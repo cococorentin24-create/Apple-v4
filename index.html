@@ -174,6 +174,15 @@ body {
   position:fixed; inset:0; z-index:0; pointer-events:none;
   background:var(--bg);
   overflow:hidden;
+  /* Cuts the safe-area strip under the Dynamic Island out of this layer
+     entirely, rather than trying to fade/compensate blob color bleeding
+     into it (a gradient overlay here previously created a visible hard
+     edge at its own boundary — the actual bug this replaces). With
+     nothing ever rendering in that clipped-away region, the pure black
+     from the page's own root background (html/body, both #000000) shows
+     through uninterrupted — a single continuous black surface, not a
+     seam between two different treatments. */
+  clip-path:inset(var(--safe-t) 0 0 0);
 }
 .bg-blob {
   position:absolute;
@@ -291,7 +300,7 @@ body {
   display:flex; align-items:center; justify-content:space-between;
   padding:26px 24px 16px;
   position:sticky; top:0; z-index:10;
-  background:linear-gradient(to bottom, rgba(9,9,9,0.97) 75%, transparent);
+  background:linear-gradient(to bottom, var(--bg) 75%, transparent);
   backdrop-filter:blur(0);
 }
 .ph-title { font-size:28px; font-weight:800; letter-spacing:-0.6px; }
@@ -390,8 +399,8 @@ body {
   animation-delay:calc(min(var(--stagger-i, 0), 10) * 35ms);
 }
 @keyframes cardStaggerIn {
-  from { opacity:0; transform:translateY(14px) scale(0.96); }
-  to { opacity:1; transform:translateY(0) scale(1); }
+  from { opacity:0; transform:translateY(14px); }
+  to { opacity:1; transform:translateY(0); }
 }
 .card:hover { transform:translateY(-4px); }
 .card:active { transform:scale(0.94) !important; opacity:0.88; transition:transform 0.12s var(--ease); }
@@ -628,7 +637,7 @@ body {
   background:var(--bg);
 }
 #fp-blur {
-  position:absolute; inset:-25%; z-index:-1;
+  position:absolute; top:calc(var(--safe-t) + 40px); left:-25%; right:-25%; bottom:-25%; z-index:-1;
   background:radial-gradient(ellipse at 25% 20%, var(--c1) 0%, transparent 50%),
               radial-gradient(ellipse at 75% 70%, var(--c2) 0%, transparent 50%),
               radial-gradient(ellipse at 60% 40%, var(--c1) 0%, transparent 60%);
@@ -636,6 +645,13 @@ body {
   transition:opacity 0.6s var(--ease), background 1.2s var(--ease);
   will-change:transform;
   animation:fpBlurDrift 30s ease-in-out infinite;
+  /* top is pinned to var(--safe-t) plus extra margin (rather than the
+     -25% overflow every other edge keeps for its drifting motion) —
+     this layer carries dynamic artwork-based color, which would
+     otherwise bleed into the safe-area strip under the Dynamic Island.
+     The extra 40px absorbs the drift animation's own vertical
+     translate(-2%) at its peak, which alone could still push the visual
+     edge back into that strip if only the resting position were fixed. */
 }
 #fp-blur.img {
   opacity:0.92;
@@ -867,14 +883,29 @@ body {
   border-radius:4px; outline:none;
   transition:height 0.25s var(--spring), box-shadow 0.3s var(--ease);
   position:relative;
+  /* All dragging is handled by the wrapper's delegated pointer events
+     (see the JS) — this input's own native touch handling is disabled
+     to avoid double-handling the same gesture in two places at once,
+     which would cause jumpy/erratic seeking. The wrapper is what
+     actually gives an expanded, reliable touch target: a range input's
+     native hit area doesn't reliably extend into surrounding padding the
+     way a normal element's does, which is what made the very first drag
+     attempt require an extra "wasted" tap before. */
+  pointer-events:none;
 }
-#fp-seek:hover, #fp-seek:active { height:11px; }
+#fp-seek-wrap { cursor:pointer; }
+/* fp-seek has pointer-events:none (dragging is delegated to the
+   wrapper), so :hover/:active never fire on it directly — .dragging is
+   toggled by the wrapper's JS pointer handlers instead, preserving the
+   exact same "grows and glows while actively touched" visual behavior. */
+#fp-seek.dragging { height:11px; }
 /* Identity-variant glass response: the track itself stays flat and inert
-   until touched, then blooms with a soft accent-colored glow — the "reveal
-   on interaction" behavior that is the defining trait of Apple's Liquid
-   Glass material, rather than a permanently-glowing decorative track. */
-#fp-seek:active {
-  box-shadow:0 0 20px 2px var(--accent-glow), 0 0 0 1px rgba(255,255,255,0.08);
+   until touched, then blooms with a soft neutral glow — the "reveal on
+   interaction" behavior that is the defining trait of Apple's Liquid
+   Glass material. Neutral white/gray rather than the app's red accent
+   color, which clashed visually against the white track itself. */
+#fp-seek.dragging {
+  box-shadow:0 0 20px 2px rgba(255,255,255,0.25), 0 0 0 1px rgba(255,255,255,0.08);
 }
 #fp-seek::-webkit-slider-thumb {
   -webkit-appearance:none; width:0; height:0;
@@ -882,15 +913,16 @@ body {
   box-shadow:0 2px 8px rgba(0,0,0,0.5);
   transition:transform 0.2s var(--spring), width 0.2s var(--spring), height 0.2s var(--spring), box-shadow 0.2s var(--ease);
 }
-#fp-seek:hover::-webkit-slider-thumb, #fp-seek:active::-webkit-slider-thumb { width:18px; height:18px; transform:scale(1.1); }
+#fp-seek.dragging::-webkit-slider-thumb { width:18px; height:18px; transform:scale(1.1); }
 /* The thumb itself gets a brighter halo only while actively dragging —
    this is the "point of contact catches the light" behavior real glass
-   exhibits, applied to the one element the finger is actually touching. */
-#fp-seek:active::-webkit-slider-thumb {
-  box-shadow:0 2px 8px rgba(0,0,0,0.5), 0 0 0 8px rgba(255,255,255,0.12), 0 0 16px 4px var(--accent-glow);
+   exhibits, applied to the one element the finger is actually touching.
+   Neutral white glow, not the app's red accent color. */
+#fp-seek.dragging::-webkit-slider-thumb {
+  box-shadow:0 2px 8px rgba(0,0,0,0.5), 0 0 0 8px rgba(255,255,255,0.12), 0 0 16px 4px rgba(255,255,255,0.3);
 }
 #fp-seek::-moz-range-thumb { width:0; height:0; border-radius:50%; background:#fff; border:none; }
-#fp-seek:hover::-moz-range-thumb, #fp-seek:active::-moz-range-thumb { width:18px; height:18px; }
+#fp-seek.dragging::-moz-range-thumb { width:18px; height:18px; }
 #fp-times {
   display:flex; justify-content:space-between; align-items:center;
   padding:6px 26px 0; font-size:12px; color:var(--text3); font-variant-numeric:tabular-nums;
@@ -1775,9 +1807,9 @@ body {
     <main id="content">
 
       <!-- HOME -->
-      <div class="view active" id="view-home">
+      <div class="view active" id="view-home" data-nav-type="tab">
         <div class="ph">
-          <div class="ph-title" id="home-greeting">Bonjour 👋</div>
+          <div class="ph-title" id="home-greeting">Accueil</div>
           <div class="ph-actions">
             <button class="icon-btn" onclick="openSleepModal()" title="Minuteur">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
@@ -2835,17 +2867,46 @@ audio.addEventListener('waiting', () => updatePlayIcons());
 
 let seekWasPlaying = false;
 const seekEl = $('fp-seek');
-seekEl.addEventListener('pointerdown', () => {
+const seekWrapEl = $('fp-seek-wrap');
+// A native range input's real touch-hit area doesn't reliably extend into
+// surrounding padding/margin the way a normal button's does — so instead
+// of relying on CSS alone to expand the tappable zone (which left a "dead"
+// first tap needed before dragging actually worked), the wrapper itself
+// captures the touch and computes the correct value from where it landed,
+// then applies it directly. This gives an immediate, correct first-touch
+// drag from anywhere in the wrapper's padded area, not just the visible
+// thin track.
+function _seekValueFromClientX(clientX) {
+  const rect = seekEl.getBoundingClientRect();
+  const pct = Math.max(0, Math.min(100, ((clientX - rect.left) / rect.width) * 100));
+  return pct;
+}
+let seekDragging = false;
+seekWrapEl.addEventListener('pointerdown', e => {
+  seekDragging = true;
+  seekEl.classList.add('dragging');
   seekWasPlaying = isPlaying;
   if (isPlaying) audio.pause();
+  const pct = _seekValueFromClientX(e.clientX);
+  seekEl.value = pct;
+  seekEl.style.setProperty('--sp', pct + '%');
+  if (audio.duration) audio.currentTime = (pct / 100) * audio.duration;
 });
-seekEl.addEventListener('input', e => {
-  if (audio.duration) audio.currentTime = (e.target.value/100)*audio.duration;
-  e.target.style.setProperty('--sp', e.target.value+'%');
+seekWrapEl.addEventListener('pointermove', e => {
+  if (!seekDragging) return;
+  const pct = _seekValueFromClientX(e.clientX);
+  seekEl.value = pct;
+  seekEl.style.setProperty('--sp', pct + '%');
+  if (audio.duration) audio.currentTime = (pct / 100) * audio.duration;
 });
-seekEl.addEventListener('pointerup', () => {
+function _seekDragEnd() {
+  if (!seekDragging) return;
+  seekDragging = false;
+  seekEl.classList.remove('dragging');
   if (seekWasPlaying) { isPlaying = true; audio.play().catch(()=>{}); }
-});
+}
+seekWrapEl.addEventListener('pointerup', _seekDragEnd);
+seekWrapEl.addEventListener('pointercancel', _seekDragEnd);
 $('fp-vol').addEventListener('input', e => {
   const v = parseFloat(e.target.value);
   audio.volume = v;
@@ -2892,7 +2953,14 @@ function _postArtworkAndMeta() {
     $('fp-blur').style.background = `url("${artURL}") center center / cover no-repeat`;
     $('fp-blur').classList.add('img');
     const img = new Image();
-    img.crossOrigin='anonymous';
+    // No crossOrigin here — artURL is always a data: URL (see
+    // _blobToDataURL), which is inherently same-origin and never needs
+    // CORS. Setting crossOrigin on it anyway was a likely cause of the
+    // intermittent "background sometimes doesn't pick up the artwork
+    // color, sometimes does" bug: canvas tainting behavior around
+    // needlessly-CORS-tagged same-origin images can vary, silently
+    // making getImageData() throw inside extractAndApplyColors()'s
+    // try/catch and falling back to the fixed gray color.
     img.onload = () => extractAndApplyColors(img);
     img.src = artURL;
   } else {
@@ -3500,9 +3568,7 @@ function renderHome() {
   if (_renderHomeTimer) return;
   _renderHomeTimer = setTimeout(() => { _renderHomeTimer = null; }, 300);
 
-  const h = new Date().getHours();
-  const g = h<12?'Bonjour':h<18?'Bonne après-midi':'Bonsoir';
-  $('home-greeting').textContent = g + ' 👋';
+  $('home-greeting').textContent = 'Accueil';
 
   const sorted = [...library].sort((a,b)=>{
     const ap = a.lastPlayed||0, bp = b.lastPlayed||0;
@@ -4587,109 +4653,63 @@ function _artFlipContent() {
 }
 
 function openFullPlayer() {
-  const miniArt = $('pp-art');
-  const flip = $('fp-art-flip');
-  const fullArtWrap = $('fp-art-wrap');
-  const fp = $('full-player');
-
-  if (miniArt && flip && fullArtWrap && getComputedStyle($('player-bar')).display !== 'none') {
-    const fromRect = miniArt.getBoundingClientRect();
-    flip.innerHTML = _artFlipContent();
-    flip.style.top = fromRect.top + 'px';
-    flip.style.left = fromRect.left + 'px';
-    flip.style.width = fromRect.width + 'px';
-    flip.style.height = fromRect.height + 'px';
-    flip.style.borderRadius = '10px';
-    flip.classList.add('active');
-    $('fp-art').style.opacity = '0';
-
-    fp.classList.add('open');
-    updateQueueUI();
-
-    // Read the destination on the next frame — the panel needs to have
-    // begun its slide-up (display/layout settled) before fp-art-wrap's
-    // rect is meaningful, otherwise we'd capture its off-screen position.
-    requestAnimationFrame(() => {
-      const toRect = fullArtWrap.querySelector('#fp-art').getBoundingClientRect();
-      flip.style.top = toRect.top + 'px';
-      flip.style.left = toRect.left + 'px';
-      flip.style.width = toRect.width + 'px';
-      flip.style.height = toRect.height + 'px';
-      flip.style.borderRadius = '20px';
-    });
-
-    setTimeout(() => {
-      flip.classList.remove('active');
-      $('fp-art').style.opacity = '';
-    }, 460);
-  } else {
-    // Fallback: no mini-player visible to fly from (e.g. first launch,
-    // nothing has ever played) — just open normally, no clone needed.
-    fp.classList.add('open');
-    updateQueueUI();
-  }
+  $('full-player').classList.add('open');
+  updateQueueUI();
 }
 
 function closeFullPlayer() {
   const el = $('full-player');
   if (!el) return;
-  const miniArt = $('pp-art');
-  const flip = $('fp-art-flip');
-  const fpArtEl = document.querySelector('#fp-art-wrap #fp-art');
-
-  // Reset to the default "play" mode after the closing flight animation
-  // finishes, not before — resetting immediately would snap the shrunk
-  // queue/lyrics-mode artwork back to full size mid-flight, fighting with
-  // the clone that's flying from its (still shrunk) actual position.
-  // Without this reset at all, every reopen kept whatever mode was last
-  // active, so the clean default screen (large artwork, no tabs) could
-  // only ever be seen once, before the first tap on Lyrics or Queue.
-  const resetModeAfterClose = () => { if (_fpMode !== 'play') _setFpMode('play'); };
-
-  if (miniArt && flip && fpArtEl && getComputedStyle($('player-bar')).display !== 'none') {
-    const fromRect = fpArtEl.getBoundingClientRect();
-    flip.innerHTML = _artFlipContent();
-    flip.style.top = fromRect.top + 'px';
-    flip.style.left = fromRect.left + 'px';
-    flip.style.width = fromRect.width + 'px';
-    flip.style.height = fromRect.height + 'px';
-    flip.style.borderRadius = '20px';
-    flip.classList.add('active');
-    fpArtEl.style.opacity = '0';
-
-    el.classList.remove('open');
-    el.style.transform = '';
-
-    requestAnimationFrame(() => {
-      const toRect = miniArt.getBoundingClientRect();
-      flip.style.top = toRect.top + 'px';
-      flip.style.left = toRect.left + 'px';
-      flip.style.width = toRect.width + 'px';
-      flip.style.height = toRect.height + 'px';
-      flip.style.borderRadius = '10px';
-    });
-
-    setTimeout(() => {
-      flip.classList.remove('active');
-      fpArtEl.style.opacity = '';
-      resetModeAfterClose();
-    }, 460);
-  } else {
-    el.classList.remove('open');
-    el.style.transform = '';
-    resetModeAfterClose();
-  }
+  el.classList.remove('open');
+  el.style.transform = '';
+  // Reset to the default "play" mode on close — without this, every
+  // reopen kept whatever mode (queue/lyrics) was last active, so the
+  // clean default screen (large artwork, no tabs) could only ever be
+  // seen once, before the first tap on Lyrics or Queue.
+  if (_fpMode !== 'play') _setFpMode('play');
 }
 
-// Swipe-down gesture
+// Swipe-down gesture — starts tracking if the touch began anywhere in the
+// panel's upper portion (handle, artwork, title/artist), not just the
+// thin handle strip alone (too narrow — required near-pixel-perfect
+// aim) and not the whole panel either (that version let dragging the
+// seek bar's own vertical jitter be misread as "start closing the
+// panel", fighting with the seek drag). This is the naturally-large
+// zone a thumb actually lands on when swiping the panel down, while
+// still excluding the seek bar and everything below it.
 let fpTy=0;
+let fpSwipeActive=false;
 const fp=$('full-player');
-fp.addEventListener('touchstart',e=>{fpTy=e.touches[0].clientY;},{passive:true});
+const fpSwipeZones=[$('fp-hd'), $('fp-art-wrap'), $('fp-meta')];
+fpSwipeZones.forEach(zone => {
+  if (!zone) return;
+  zone.addEventListener('touchstart',e=>{
+    fpTy=e.touches[0].clientY;
+    fpSwipeActive=true;
+  },{passive:true});
+});
+let fpSwipeRafPending=false;
+let fpSwipeLastDy=0;
 fp.addEventListener('touchmove',e=>{
+  if(!fpSwipeActive) return;
   const dy=e.touches[0].clientY-fpTy;
-  if(dy>0) fp.style.transform=`translateY(${dy}px)`;
+  if(dy<=0) return;
+  fpSwipeLastDy=dy;
+  // Coalesce rapid touchmove events into one style write per actual
+  // screen refresh — touch events can fire faster than the display
+  // redraws, so writing directly on every single one is redundant work
+  // that can cause visible stutter during the drag.
+  if(!fpSwipeRafPending){
+    fpSwipeRafPending=true;
+    requestAnimationFrame(()=>{
+      fp.style.transform=`translateY(${fpSwipeLastDy}px)`;
+      fpSwipeRafPending=false;
+    });
+  }
 },{passive:true});
 fp.addEventListener('touchend',e=>{
+  if(!fpSwipeActive) return;
+  fpSwipeActive=false;
   const dy=e.changedTouches[0].clientY-fpTy;
   fp.style.transform='';
   if(dy>140) closeFullPlayer();
@@ -5268,10 +5288,6 @@ async function init() {
   if ($('fp-qtoggle-rep')) $('fp-qtoggle-rep').classList.toggle('lit', repeatMode > 0);
   if($('fp-qtoggle-xfade')) $('fp-qtoggle-xfade').classList.toggle('lit',isCrossfade);
 
-  // Greeting time-based
-  const h=new Date().getHours();
-  $('home-greeting').textContent = (h<12?'Bonjour':h<18?'Bonne après-midi':'Bonsoir') + ' 👋';
-
   // Hide splash
   const splash=$('splash');
   splash.style.opacity='0';
@@ -5348,8 +5364,18 @@ init();
     b.style.display='';
     var nr=n.getBoundingClientRect(), ar=a.getBoundingClientRect();
     var pad=Math.min(4,ar.width*0.06);
-    b.style.left=(ar.left-nr.left-pad)+'px';
-    b.style.width=(ar.width+pad*2)+'px';
+    // For the first/last nav items, the container has zero horizontal
+    // padding, so ar.left is already flush with nr.left (or ar.right
+    // flush with nr.right) — subtracting/adding the extra "pad" breathing
+    // room here would push the bubble partially outside the container's
+    // edge. Clamping keeps the bubble fully inside the visible bar while
+    // still giving the middle items their normal breathing room.
+    var rawLeft=ar.left-nr.left-pad;
+    var rawRight=ar.left-nr.left+ar.width+pad;
+    var clampedLeft=Math.max(0,rawLeft);
+    var clampedRight=Math.min(nr.width,rawRight);
+    b.style.left=clampedLeft+'px';
+    b.style.width=(clampedRight-clampedLeft)+'px';
     b.style.top=(ar.top-nr.top+1.5)+'px';
     b.style.height=(ar.height-3)+'px';
   }
