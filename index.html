@@ -174,15 +174,6 @@ body {
   position:fixed; inset:0; z-index:0; pointer-events:none;
   background:var(--bg);
   overflow:hidden;
-  /* Cuts the safe-area strip under the Dynamic Island out of this layer
-     entirely, rather than trying to fade/compensate blob color bleeding
-     into it (a gradient overlay here previously created a visible hard
-     edge at its own boundary — the actual bug this replaces). With
-     nothing ever rendering in that clipped-away region, the pure black
-     from the page's own root background (html/body, both #000000) shows
-     through uninterrupted — a single continuous black surface, not a
-     seam between two different treatments. */
-  clip-path:inset(var(--safe-t) 0 0 0);
 }
 .bg-blob {
   position:absolute;
@@ -637,7 +628,7 @@ body {
   background:var(--bg);
 }
 #fp-blur {
-  position:absolute; top:calc(var(--safe-t) + 40px); left:-25%; right:-25%; bottom:-25%; z-index:-1;
+  position:absolute; inset:-25%; z-index:-1;
   background:radial-gradient(ellipse at 25% 20%, var(--c1) 0%, transparent 50%),
               radial-gradient(ellipse at 75% 70%, var(--c2) 0%, transparent 50%),
               radial-gradient(ellipse at 60% 40%, var(--c1) 0%, transparent 60%);
@@ -645,13 +636,6 @@ body {
   transition:opacity 0.6s var(--ease), background 1.2s var(--ease);
   will-change:transform;
   animation:fpBlurDrift 30s ease-in-out infinite;
-  /* top is pinned to var(--safe-t) plus extra margin (rather than the
-     -25% overflow every other edge keeps for its drifting motion) —
-     this layer carries dynamic artwork-based color, which would
-     otherwise bleed into the safe-area strip under the Dynamic Island.
-     The extra 40px absorbs the drift animation's own vertical
-     translate(-2%) at its peak, which alone could still push the visual
-     edge back into that strip if only the resting position were fixed. */
 }
 #fp-blur.img {
   opacity:0.92;
@@ -4690,6 +4674,7 @@ fpSwipeZones.forEach(zone => {
 });
 let fpSwipeRafPending=false;
 let fpSwipeLastDy=0;
+let fpSwipeRafId=null;
 fp.addEventListener('touchmove',e=>{
   if(!fpSwipeActive) return;
   const dy=e.touches[0].clientY-fpTy;
@@ -4701,7 +4686,7 @@ fp.addEventListener('touchmove',e=>{
   // that can cause visible stutter during the drag.
   if(!fpSwipeRafPending){
     fpSwipeRafPending=true;
-    requestAnimationFrame(()=>{
+    fpSwipeRafId=requestAnimationFrame(()=>{
       fp.style.transform=`translateY(${fpSwipeLastDy}px)`;
       fpSwipeRafPending=false;
     });
@@ -4710,6 +4695,13 @@ fp.addEventListener('touchmove',e=>{
 fp.addEventListener('touchend',e=>{
   if(!fpSwipeActive) return;
   fpSwipeActive=false;
+  // Cancel any still-pending rAF from the last touchmove — without this,
+  // that callback fires on the NEXT frame (after this handler already
+  // ran) and reapplies the stale translateY, overwriting the clear below
+  // and leaving the panel visually frozen mid-drag, neither open nor
+  // closed. This was the actual cause of "stops in the middle of the
+  // screen" when swiping to close.
+  if(fpSwipeRafId!==null){ cancelAnimationFrame(fpSwipeRafId); fpSwipeRafId=null; fpSwipeRafPending=false; }
   const dy=e.changedTouches[0].clientY-fpTy;
   fp.style.transform='';
   if(dy>140) closeFullPlayer();
